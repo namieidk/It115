@@ -17,7 +17,6 @@ namespace YourProject.Controllers
             _context = context;
         }
 
-        // --- LOGIN METHOD ---
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginModel model)
         {
@@ -25,10 +24,8 @@ namespace YourProject.Controllers
             string attempt = model.Password ?? "";
             string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
-            // 1. Find the User
             var user = await _context.Users.FirstOrDefaultAsync(u => u.EmployeeId == cleanId);
             
-            // 2. Multi-case Password Verification
             bool isValid = false;
             if (user != null)
             {
@@ -38,10 +35,9 @@ namespace YourProject.Controllers
                           BCrypt.Net.BCrypt.Verify(attempt.ToLower(), user.PasswordHash);
             }
 
-            // 3. --- SAVE TO DATABASE (Using your LoginLogs model) ---
             try 
             {
-                var auditLog = new LoginLog // Exactly matching your LoginLogs.cs
+                var auditLog = new LoginLog
                 {
                     EmployeeId = cleanId,
                     IpAddress = clientIp == "::1" ? "127.0.0.1" : clientIp,
@@ -51,29 +47,28 @@ namespace YourProject.Controllers
 
                 _context.LoginLogs.Add(auditLog); 
                 await _context.SaveChangesAsync();
-                
-                // Debug line to your Console/Terminal
                 Console.WriteLine($"[AUDIT] Saved record for {cleanId}: {auditLog.Status}");
             }
             catch (Exception ex)
             {
-                // If this prints in your terminal, it means your Database Table name 
-                // doesn't match what EF Core expects.
                 Console.WriteLine($"[AUDIT ERROR] {ex.Message}");
             }
 
-            // 4. Return response
             if (user == null) return Unauthorized(new { message = "Identity Not Found" });
             if (!isValid) return Unauthorized(new { message = "Password Incorrect" });
             if (user.Status == "INACTIVE") return Unauthorized(new { message = "Access Revoked" });
 
             return Ok(new { 
                 message = "Success", 
-                user = new { name = user.Name, role = user.Role, employeeId = user.EmployeeId } 
+                user = new { 
+                    name = user.Name, 
+                    role = user.Role, 
+                    employeeId = user.EmployeeId,
+                    department = user.Department  
+                } 
             });
         }
 
-        // --- PROVISION METHOD ---
         [HttpPost("provision")]
         public async Task<IActionResult> Provision([FromBody] ProvisionModel model)
         {
@@ -108,7 +103,6 @@ namespace YourProject.Controllers
         }
     }
 
-    // DTOs (Data Transfer Objects)
     public class ProvisionModel {
         public string Name { get; set; } = "";
         public string EmployeeId { get; set; } = "";

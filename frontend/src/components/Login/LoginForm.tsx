@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck } from 'lucide-react';
 
 export const LoginForm = () => {
   const [employeeId, setEmployeeId] = useState('');
@@ -29,11 +29,22 @@ export const LoginForm = () => {
       if (response.ok) {
         const role = data.user.role.toUpperCase();
         const name = data.user.name;
+        const id = data.user.employeeId;
+        const department = data.user.department || 'General'; // ✅ pull department from API
 
-        // ✅ Set session cookie for middleware
+        // Set session cookie
         document.cookie = `session=${JSON.stringify({ role, name })}; path=/; max-age=${30 * 60}`;
 
-        // ✅ Also store in localStorage for client-side use
+        // Store unified user object including department
+        const userPayload = {
+          name,
+          role,
+          employeeId: id,
+          department, // ✅ include department
+        };
+        localStorage.setItem('user', JSON.stringify(userPayload));
+
+        // Legacy keys
         localStorage.setItem('user_role', role);
         localStorage.setItem('user_name', name);
 
@@ -42,22 +53,25 @@ export const LoginForm = () => {
           case 'MANAGER':  router.push('/managerDashboard'); break;
           case 'HR':       router.push('/hrDashboard'); break;
           case 'EMPLOYEE': router.push('/Dashboard'); break;
-          default:         router.push('/login'); break;
+          default:         router.push('/'); break;
         }
       } else {
-        setError(data.message || 'Invalid System Signature.');
+        setError(data.message || 'IDENTITY VERIFICATION FAILED.');
       }
-    } catch {
-      setError('COMMUNICATIONS FAILURE: System Offline.');
+    } catch (err) {
+      setError('COMMUNICATIONS FAILURE: DATABASE OFFLINE.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full space-y-5">
-      <div className="space-y-1.5">
-        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Employee ID</label>
+    <form onSubmit={handleSubmit} className="w-full space-y-6">
+      {/* EMPLOYEE ID INPUT */}
+      <div className="space-y-2">
+        <label className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 ml-1">
+          Access Credential (ID)
+        </label>
         <input
           type="text"
           required
@@ -65,14 +79,19 @@ export const LoginForm = () => {
           value={employeeId}
           onChange={(e) => setEmployeeId(e.target.value.toUpperCase())}
           placeholder="AX0000"
-          className="w-full px-5 py-3.5 bg-slate-800/50 border border-white/5 rounded-xl text-white outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all font-mono text-sm"
+          className="w-full px-5 py-4 bg-slate-900/50 border border-white/5 rounded-2xl text-white outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all font-mono text-sm uppercase"
         />
       </div>
 
-      <div className="space-y-1.5">
+      {/* PASSWORD INPUT */}
+      <div className="space-y-2">
         <div className="flex justify-between items-center px-1">
-          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Password</label>
-          <button type="button" className="text-[10px] font-bold text-emerald-500 uppercase tracking-tighter">Reset</button>
+          <label className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
+            Security Phrase
+          </label>
+          <button type="button" className="text-[10px] font-bold text-indigo-500 uppercase tracking-tighter hover:text-indigo-400 transition-colors">
+            Forgot?
+          </button>
         </div>
         <div className="relative">
           <input
@@ -81,34 +100,40 @@ export const LoginForm = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••••••"
-            className="w-full px-5 py-3.5 pr-12 bg-slate-800/50 border border-white/5 rounded-xl text-white outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all font-mono text-sm"
+            className="w-full px-5 py-4 pr-12 bg-slate-900/50 border border-white/5 rounded-2xl text-white outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all font-mono text-sm"
           />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition-colors"
           >
             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
       </div>
 
+      {/* ERROR DISPLAY */}
       {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2 animate-pulse">
-          <div className="w-1.5 h-1.5 bg-red-500 rounded-full" />
-          <span className="text-[11px] font-bold text-red-400">{error}</span>
+        <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+          <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">{error}</span>
         </div>
       )}
 
+      {/* SUBMIT BUTTON */}
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-black rounded-xl transition-all active:scale-[0.97] text-sm uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10"
+        className="group w-full py-5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-black rounded-2xl transition-all active:scale-[0.98] text-[11px] uppercase tracking-[0.3em] flex items-center justify-center gap-3 shadow-xl shadow-indigo-600/20 border border-white/10"
       >
-        {isLoading 
-          ? <div className="h-4 w-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" /> 
-          : "Authenticate"
-        }
+        {isLoading ? (
+          <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <>
+            <ShieldCheck className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            Establish Link
+          </>
+        )}
       </button>
     </form>
   );
