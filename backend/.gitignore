@@ -1,1 +1,4 @@
 .env
+.appsettings.json
+appsettings.Development.json
+Program.cs

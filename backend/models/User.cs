@@ -16,6 +16,8 @@ namespace YourProject.Models
         [Required]
         public string PasswordHash { get; set; }
 
+        public string Status { get; set; } = "ACTIVE";
+
         [Required]
         public string Role { get; set; } = "ADMIN"; 
 
