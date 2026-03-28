@@ -17,13 +17,13 @@ namespace YourProject.Controllers
             _context = context;
         }
 
-        // --- 1. FETCH ALL ---
+        // --- 1. FETCH ALL ACCOUNTS ---
         [HttpGet("accounts")]
         public async Task<IActionResult> GetAllAccounts()
         {
             var users = await _context.Users
                 .Select(u => new {
-                    id         = u.Id,         // ✅ lowercase to match TypeScript
+                    id         = u.Id,
                     name       = u.Name,
                     employeeId = u.EmployeeId,
                     role       = u.Role,
@@ -35,19 +35,57 @@ namespace YourProject.Controllers
             return Ok(users);
         }
 
-        // --- 2. PROVISION ---
+        // --- 2. FETCH LOGIN AUDIT LOGS (UPDATED FOR STABILITY) ---
+        [HttpGet("login-logs")]
+        public async Task<IActionResult> GetLoginLogs()
+        {
+            try
+            {
+                // We use a manual projection to handle "Unknown" users gracefully
+                // This prevents the "Backend Error" when an ID doesn't match the Users table
+                var logs = await _context.LoginLogs
+                    .Select(log => new
+                    {
+                        log.Id,
+                        log.EmployeeId,
+                        log.IpAddress,
+                        log.Status,
+                        log.Timestamp,
+                        // Sub-query to get user info if it exists
+                        UserDetail = _context.Users
+                            .Where(u => u.EmployeeId == log.EmployeeId)
+                            .Select(u => new { u.Name, u.Role })
+                            .FirstOrDefault()
+                    })
+                    .OrderByDescending(l => l.Timestamp)
+                    .ToListAsync();
+
+                // Format the data for the Indigo Frontend
+                var result = logs.Select(l => new {
+                    id = l.Id,
+                    // If UserDetail is null, label as UNKNOWN so the UI can highlight it
+                    user = l.UserDetail?.Name ?? $"UNKNOWN [{l.EmployeeId}]",
+                    role = l.UserDetail?.Role ?? "UNAUTHORIZED_ACTOR",
+                    ipAddress = l.IpAddress == "::1" ? "127.0.0.1" : l.IpAddress,
+                    status = l.Status?.ToUpper() ?? "FAILED",
+                    timestamp = l.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"),
+                    device = "AXIOM_CORE_V2"
+                });
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "KERNEL_LOG_FETCH_FAILURE: " + ex.Message });
+            }
+        }
+
+        // --- 3. PROVISION ACCOUNT ---
         [HttpPost("provision")]
         public async Task<IActionResult> ProvisionAccount([FromBody] UserRegistrationDto model)
         {
-            if (model == null ||
-                string.IsNullOrWhiteSpace(model.Name) ||
-                string.IsNullOrWhiteSpace(model.EmployeeId) ||
-                string.IsNullOrWhiteSpace(model.Role) ||
-                string.IsNullOrWhiteSpace(model.Department) ||
-                string.IsNullOrWhiteSpace(model.Password))
-            {
+            if (model == null || string.IsNullOrWhiteSpace(model.EmployeeId))
                 return BadRequest(new { message = "ALL FIELDS ARE REQUIRED." });
-            }
 
             var cleanId = model.EmployeeId.Trim().ToUpper();
 
@@ -70,124 +108,64 @@ namespace YourProject.Controllers
             return Ok(new { message = "PROVISIONED" });
         }
 
-        // --- 3. UPDATE ---
+        // --- 4. UPDATE ACCOUNT ---
         [HttpPut("update-account/{id}")]
         public async Task<IActionResult> UpdateAccount(int id, [FromBody] UpdateAccountDto model)
         {
-            Console.WriteLine($"[UPDATE] ID: {id} | Name: {model?.Name} | EmpId: {model?.EmployeeId}");
-
-            if (model == null)
-                return BadRequest(new { message = "INVALID DATA." });
-
             var user = await _context.Users.FindAsync(id);
-            Console.WriteLine($"[UPDATE] User found: {user != null}");
-
-            if (user == null)
-                return NotFound(new { message = "ACCOUNT NOT FOUND." });
-
-            var cleanNewId = model.EmployeeId.Trim().ToUpper();
-
-            // Check if new ID is taken by someone else
-            if (user.EmployeeId != cleanNewId)
-            {
-                bool idExists = await _context.Users
-                    .AnyAsync(u => u.EmployeeId == cleanNewId && u.Id != id);
-                if (idExists)
-                    return BadRequest(new { message = "EMPLOYEE ID ALREADY IN USE." });
-            }
+            if (user == null) return NotFound(new { message = "ACCOUNT NOT FOUND." });
 
             user.Name       = model.Name.Trim().ToUpper();
-            user.EmployeeId = cleanNewId;
+            user.EmployeeId = model.EmployeeId.Trim().ToUpper();
             user.Role       = model.Role.Trim().ToUpper();
             user.Department = model.Department.Trim().ToUpper();
 
-            try
-            {
-                await _context.SaveChangesAsync();
-                Console.WriteLine($"[UPDATE] Success for ID: {id}");
-                return Ok(new { message = "UPDATED" });
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[UPDATE ERROR] {ex.Message}");
-                Console.WriteLine($"[UPDATE INNER] {ex.InnerException?.Message}");
-                return StatusCode(500, new { 
-                    message = ex.InnerException?.Message ?? ex.Message 
-                });
-            }
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "UPDATED" });
         }
 
-        // --- 4. REVOKE ---
+        // --- 5. REVOKE ACCESS ---
         [HttpPut("revoke-account/{id}")]
         public async Task<IActionResult> RevokeAccount(int id)
         {
-            Console.WriteLine($"[REVOKE] ID received: {id}");
+            var user = await _context.Users.FindAsync(id);
+            if (user == null) return NotFound(new { message = "USER NOT FOUND" });
 
-            try
-            {
-                var user = await _context.Users.FindAsync(id);
-                Console.WriteLine($"[REVOKE] User found: {user != null}");
+            user.Status = "INACTIVE";
+            _context.Entry(user).Property(u => u.Status).IsModified = true;
 
-                if (user == null)
-                    return NotFound(new { message = "USER NOT FOUND" });
-
-                user.Status = "INACTIVE";
-                _context.Entry(user).Property(u => u.Status).IsModified = true;
-
-                await _context.SaveChangesAsync();
-                Console.WriteLine($"[REVOKE] Success for ID: {id}");
-                return Ok(new { message = "ACCESS REVOKED" });
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[REVOKE ERROR] {ex.Message}");
-                Console.WriteLine($"[REVOKE INNER] {ex.InnerException?.Message}");
-                return StatusCode(500, new { 
-                    message = ex.InnerException?.Message ?? ex.Message 
-                });
-            }
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "ACCESS REVOKED" });
         }
 
-        // --- 5. REACTIVATE ---
-[HttpPut("reactivate-account/{id}")]
-public async Task<IActionResult> ReactivateAccount(int id)
-{
-    Console.WriteLine($"[REACTIVATE] ID received: {id}");
-    try
-    {
-        var user = await _context.Users.FindAsync(id);
-        if (user == null)
-            return NotFound(new { message = "USER NOT FOUND" });
+        // --- 6. REACTIVATE ACCESS ---
+        [HttpPut("reactivate-account/{id}")]
+        public async Task<IActionResult> ReactivateAccount(int id)
+        {
+            var user = await _context.Users.FindAsync(id);
+            if (user == null) return NotFound(new { message = "USER NOT FOUND" });
 
-        user.Status = "ACTIVE";
-        _context.Entry(user).Property(u => u.Status).IsModified = true;
-        await _context.SaveChangesAsync();
-
-        Console.WriteLine($"[REACTIVATE] Success for ID: {id}");
-        return Ok(new { message = "ACCESS RESTORED" });
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"[REACTIVATE ERROR] {ex.Message}");
-        return StatusCode(500, new { message = ex.InnerException?.Message ?? ex.Message });
-    }
-}
+            user.Status = "ACTIVE";
+            _context.Entry(user).Property(u => u.Status).IsModified = true;
+            
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "ACCESS RESTORED" });
+        }
     }
 
-    public class UserRegistrationDto
-    {
-        public string Name       { get; set; } = string.Empty;
+    // --- SUPPORTING DTOs ---
+    public class UserRegistrationDto {
+        public string Name { get; set; } = string.Empty;
         public string EmployeeId { get; set; } = string.Empty;
-        public string Role       { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
         public string Department { get; set; } = string.Empty;
-        public string Password   { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
     }
 
-    public class UpdateAccountDto
-    {
-        public string Name       { get; set; } = string.Empty;
+    public class UpdateAccountDto {
+        public string Name { get; set; } = string.Empty;
         public string EmployeeId { get; set; } = string.Empty;
-        public string Role       { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
         public string Department { get; set; } = string.Empty;
     }
 }
