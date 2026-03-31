@@ -6,7 +6,7 @@ using YourProject.Models;
 namespace YourProjectName.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/leave")]
     public class LeaveController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
@@ -20,8 +20,6 @@ namespace YourProjectName.Controllers
         // MANAGER ENDPOINTS
         // ==========================================
 
-        // GET: api/Leave/pending
-        // Returns only PENDING requests for manager review
         [HttpGet("pending")]
         public async Task<IActionResult> GetPendingRequests()
         {
@@ -32,13 +30,13 @@ namespace YourProjectName.Controllers
                                      where l.Status == "PENDING"
                                      orderby l.DateSubmitted descending
                                      select new {
-                                         id = l.Id,
+                                         id         = l.Id,
                                          employeeId = l.EmployeeId,
-                                         name = e.Name.ToUpper(),
-                                         type = l.LeaveType.ToUpper(),
-                                         date = l.StartDate.ToString("MMM dd") + " - " + l.EndDate.ToString("MMM dd"),
-                                         reason = l.Reason,
-                                         priority = l.LeaveType == "SICK LEAVE" ? "HIGH" : "NORMAL"
+                                         name       = e.Name.ToUpper(),
+                                         type       = l.LeaveType.ToUpper(),
+                                         date       = l.StartDate.ToString("MMM dd") + " - " + l.EndDate.ToString("MMM dd"),
+                                         reason     = l.Reason,
+                                         priority   = l.LeaveType == "SICK LEAVE" ? "HIGH" : "NORMAL"
                                      }).ToListAsync();
 
                 return Ok(pending);
@@ -49,9 +47,6 @@ namespace YourProjectName.Controllers
             }
         }
 
-        // POST: api/Leave/manager-action
-        // Manager approves → status becomes MANAGER_APPROVED (forwarded to HR)
-        // Manager rejects → status becomes REJECTED (stops here, HR never sees it)
         [HttpPost("manager-action")]
         public async Task<IActionResult> ManagerAction([FromBody] LeaveActionModel model)
         {
@@ -60,16 +55,7 @@ namespace YourProjectName.Controllers
                 var request = await _context.LeaveReq.FindAsync(model.RequestId);
                 if (request == null) return NotFound(new { message = "Request not found" });
 
-                if (model.Status == "APPROVED")
-                {
-                    // Forward to HR — do NOT deduct credits yet
-                    request.Status = "MANAGER_APPROVED";
-                }
-                else
-                {
-                    // Hard reject — HR will never see this
-                    request.Status = "REJECTED";
-                }
+                request.Status = model.Status == "APPROVED" ? "MANAGER_APPROVED" : "REJECTED";
 
                 await _context.SaveChangesAsync();
                 return Ok(new { message = $"Request {model.Status} by manager" });
@@ -84,8 +70,6 @@ namespace YourProjectName.Controllers
         // HR ENDPOINTS
         // ==========================================
 
-        // GET: api/Leave/hr-pending
-        // Returns only MANAGER_APPROVED requests for HR final review
         [HttpGet("hr-pending")]
         public async Task<IActionResult> GetHRPendingRequests()
         {
@@ -96,13 +80,13 @@ namespace YourProjectName.Controllers
                                      where l.Status == "MANAGER_APPROVED"
                                      orderby l.DateSubmitted descending
                                      select new {
-                                         id = l.Id,
+                                         id         = l.Id,
                                          employeeId = l.EmployeeId,
-                                         name = e.Name.ToUpper(),
-                                         type = l.LeaveType.ToUpper(),
-                                         date = l.StartDate.ToString("MMM dd") + " - " + l.EndDate.ToString("MMM dd"),
-                                         reason = l.Reason,
-                                         priority = l.LeaveType == "SICK LEAVE" ? "HIGH" : "NORMAL"
+                                         name       = e.Name.ToUpper(),
+                                         type       = l.LeaveType.ToUpper(),
+                                         date       = l.StartDate.ToString("MMM dd") + " - " + l.EndDate.ToString("MMM dd"),
+                                         reason     = l.Reason,
+                                         priority   = l.LeaveType == "SICK LEAVE" ? "HIGH" : "NORMAL"
                                      }).ToListAsync();
 
                 return Ok(pending);
@@ -113,9 +97,6 @@ namespace YourProjectName.Controllers
             }
         }
 
-        // POST: api/Leave/hr-action
-        // HR approves → status becomes APPROVED and credits are deducted
-        // HR rejects → status becomes REJECTED
         [HttpPost("hr-action")]
         public async Task<IActionResult> HRAction([FromBody] LeaveActionModel model)
         {
@@ -124,7 +105,6 @@ namespace YourProjectName.Controllers
                 var request = await _context.LeaveReq.FindAsync(model.RequestId);
                 if (request == null) return NotFound(new { message = "Request not found" });
 
-                // Safety check — only act on manager-approved requests
                 if (request.Status != "MANAGER_APPROVED")
                     return BadRequest(new { message = "Request is not in the HR review queue" });
 
@@ -135,7 +115,6 @@ namespace YourProjectName.Controllers
                 {
                     if (employee != null)
                     {
-                        // Deduct credits only on final HR approval
                         double requestedDays = (request.EndDate.Date - request.StartDate.Date).TotalDays + 1;
                         employee.LeaveBalance -= (int)requestedDays;
                     }
@@ -159,23 +138,32 @@ namespace YourProjectName.Controllers
         // EMPLOYEE ENDPOINTS
         // ==========================================
 
+        // ✅ Back to _context.Employee — this is where LeaveBalance lives
         [HttpGet("credits/{employeeId}")]
-        public async Task<IActionResult> GetCredits(int employeeId)
+        public async Task<IActionResult> GetCredits(string employeeId)
         {
-            var employee = await _context.Employee.FirstOrDefaultAsync(e => e.EmployeeId == employeeId);
-            if (employee == null) return NotFound($"Employee {employeeId} not found.");
+            var employee = await _context.Employee
+                .FirstOrDefaultAsync(e => e.EmployeeId.ToString() == employeeId);
+
+            if (employee == null)
+                return NotFound(new { message = $"Employee {employeeId} not found." });
+
             return Ok(new { balance = employee.LeaveBalance });
         }
 
         [HttpGet("history/{employeeId}")]
-        public async Task<IActionResult> GetHistory(int employeeId)
+        public async Task<IActionResult> GetHistory(string employeeId)
         {
+            // LeaveReq.EmployeeId type must match — convert to int if needed
+            if (!int.TryParse(employeeId, out int empId))
+                return BadRequest(new { message = "Invalid employee ID format." });
+
             var history = await _context.LeaveReq
-                .Where(l => l.EmployeeId == employeeId)
+                .Where(l => l.EmployeeId == empId)
                 .OrderByDescending(l => l.StartDate)
                 .Select(l => new {
-                    type = l.LeaveType,
-                    date = l.StartDate.ToString("MMM dd, yyyy") + " - " + l.EndDate.ToString("MMM dd, yyyy"),
+                    type   = l.LeaveType,
+                    date   = l.StartDate.ToString("MMM dd, yyyy") + " - " + l.EndDate.ToString("MMM dd, yyyy"),
                     status = l.Status ?? "PENDING"
                 })
                 .ToListAsync();
@@ -186,13 +174,17 @@ namespace YourProjectName.Controllers
         [HttpPost("apply")]
         public async Task<IActionResult> ApplyForLeave([FromBody] LeaveRequest request)
         {
-            var employee = await _context.Employee.FirstOrDefaultAsync(e => e.EmployeeId == request.EmployeeId);
-            if (employee == null) return NotFound("Employee record missing");
+            var employee = await _context.Employee
+                .FirstOrDefaultAsync(e => e.EmployeeId == request.EmployeeId);
+
+            if (employee == null)
+                return NotFound(new { message = "Employee record missing" });
 
             double requestedDays = (request.EndDate.Date - request.StartDate.Date).TotalDays + 1;
-            if (requestedDays <= 0) return BadRequest("Invalid date range");
+            if (requestedDays <= 0)
+                return BadRequest(new { message = "Invalid date range" });
 
-            request.Status = "PENDING";
+            request.Status        = "PENDING";
             request.DateSubmitted = DateTime.Now;
 
             _context.LeaveReq.Add(request);
@@ -204,7 +196,7 @@ namespace YourProjectName.Controllers
 
     public class LeaveActionModel
     {
-        public int RequestId { get; set; }
-        public string Status { get; set; } // "APPROVED" or "REJECTED"
+        public int    RequestId { get; set; }
+        public string Status    { get; set; } = string.Empty;
     }
 }

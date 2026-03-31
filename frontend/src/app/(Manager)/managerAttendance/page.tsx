@@ -27,13 +27,17 @@ export default function ManagerAttendancePage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [department, setDepartment] = useState<string>('');
   const [notifications, setNotifications] = useState<LateNotification[]>([]);
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
+
   const [filters, setFilters] = useState<FilterState>({
     status: 'ALL',
     date: 'TODAY',
     shift: 'ALL',
   });
 
-  // ✅ Get department from localStorage
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
@@ -42,10 +46,8 @@ export default function ManagerAttendancePage() {
     }
   }, []);
 
-  // ✅ Fetch initial attendance data
   useEffect(() => {
     if (!department) return;
-
     (async () => {
       try {
         const response = await fetch(`http://localhost:5076/api/Attendance/department/${department}`);
@@ -60,36 +62,31 @@ export default function ManagerAttendancePage() {
     })();
   }, [department]);
 
-  // ✅ Handle new real-time clock-in
   const handleNewClockIn = useCallback((record: AttendanceRecord) => {
     setAttendanceData((prev) => [record, ...prev]);
   }, []);
 
-  // ✅ Handle late notification
   const handleLateNotification = useCallback((notification: LateNotification) => {
-    setNotifications((prev) => [notification, ...prev.slice(0, 4)]); // keep last 5
-    // Auto-dismiss after 8 seconds
+    setNotifications((prev) => [notification, ...prev.slice(0, 4)]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.employeeId !== notification.employeeId));
     }, 8000);
   }, []);
 
-  // ✅ Connect SignalR
   const { isConnected } = useAttendanceSignalR({
     department,
     onNewClockIn: handleNewClockIn,
     onLateNotification: handleLateNotification,
   });
 
-  const filteredAttendance = useMemo(() => {
+  // Filter Logic
+  const filteredData = useMemo(() => {
     return attendanceData.filter((agent) => {
       const matchesSearch =
         agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         agent.id.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesStatus =
-        filters.status === 'ALL' || agent.status === filters.status;
-
+      const matchesStatus = filters.status === 'ALL' || agent.status === filters.status;
+      
       let matchesShift = true;
       if (filters.shift !== 'ALL' && agent.login !== '--:--') {
         const [hours] = agent.login.split(':').map(Number);
@@ -97,17 +94,27 @@ export default function ManagerAttendancePage() {
         else if (filters.shift === 'AFTERNOON') matchesShift = hours >= 12 && hours < 18;
         else if (filters.shift === 'NIGHT') matchesShift = hours >= 18 || hours < 6;
       }
-
       return matchesSearch && matchesStatus && matchesShift;
     });
   }, [searchTerm, attendanceData, filters]);
+
+  // Reset page when filters or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filters]);
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredData.slice(start, start + itemsPerPage);
+  }, [filteredData, currentPage]);
 
   return (
     <main className="h-screen w-full flex bg-[#020617] text-slate-200 overflow-hidden font-sans uppercase">
       <ManagerSidebar />
       <section className="flex-1 flex flex-col overflow-y-auto bg-[radial-gradient(circle_at_bottom_right,_var(--tw-gradient-stops))] from-indigo-900/10 via-[#020617] to-[#020617]">
-
-        {/* ✅ SignalR connection status indicator */}
+        
         <div className="px-12 pt-1 flex justify-end">
           <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${isConnected ? 'text-emerald-500' : 'text-slate-600'}`}>
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
@@ -115,19 +122,13 @@ export default function ManagerAttendancePage() {
           </div>
         </div>
 
-        {/* ✅ Late notifications toasts */}
         <div className="fixed top-6 right-6 z-50 space-y-3">
           {notifications.map((n, i) => (
-            <div
-              key={`${n.employeeId}-${i}`}
-              className="bg-orange-950/90 border border-orange-500/30 rounded-2xl px-6 py-4 shadow-2xl backdrop-blur-xl animate-in slide-in-from-right-4 duration-300 flex items-center gap-4 min-w-[300px]"
-            >
+            <div key={`${n.employeeId}-${i}`} className="bg-orange-950/90 border border-orange-500/30 rounded-2xl px-6 py-4 shadow-2xl backdrop-blur-xl animate-in slide-in-from-right-4 duration-300 flex items-center gap-4 min-w-[300px]">
               <span className="w-2 h-2 bg-orange-400 rounded-full animate-pulse flex-shrink-0" />
               <div>
                 <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Late Clock-In Detected</p>
-                <p className="text-[9px] font-bold text-orange-300/70 uppercase tracking-widest mt-1">
-                  {n.name} — {n.time}
-                </p>
+                <p className="text-[9px] font-bold text-orange-300/70 uppercase tracking-widest mt-1">{n.name} — {n.time}</p>
               </div>
             </div>
           ))}
@@ -139,13 +140,17 @@ export default function ManagerAttendancePage() {
           </div>
         ) : (
           <ManagerAttendanceUI
-            attendanceData={filteredAttendance}
+            attendanceData={paginatedData}
+            totalItems={filteredData.length}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             onExport={() => alert('DOWNLOADING ENCRYPTED DATA...')}
             filters={filters}
             onFilterChange={setFilters}
             onResetFilters={() => setFilters({ status: 'ALL', date: 'TODAY', shift: 'ALL' })}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
           />
         )}
       </section>

@@ -17,27 +17,25 @@ namespace YourProject.Controllers
             _context = context;
         }
 
-        // --- 1. SYSTEM SETTINGS (GET) ---
-        // Route changed to syssetting as requested
+        // ─── 1. SYSTEM SETTINGS (GET) ─────────────────────────────────────────
         [HttpGet("syssetting")]
         public async Task<IActionResult> GetSettings()
         {
-            try 
+            try
             {
                 var settings = await _context.SystemSettings.FirstOrDefaultAsync();
 
                 if (settings == null)
                 {
-                    // FIX: Do NOT set "Id = 1". Let SQL Server assign the ID automatically.
-                    settings = new SystemSettings 
-                    { 
-                        SessionTimeout = 30, 
-                        PasswordExpiry = 90, 
-                        MfaRequired = true,
-                        AlertCritical = true,
-                        AlertLogins = false,
-                        AlertExports = true,
-                        StorageUsage = 84
+                    settings = new SystemSettings
+                    {
+                        SessionTimeout = 30,
+                        PasswordExpiry = 90,
+                        MfaRequired    = true,
+                        AlertCritical  = true,
+                        AlertLogins    = false,
+                        AlertExports   = true,
+                        StorageUsage   = 84
                     };
                     _context.SystemSettings.Add(settings);
                     await _context.SaveChangesAsync();
@@ -47,19 +45,18 @@ namespace YourProject.Controllers
             }
             catch (Exception ex)
             {
-                // Returns the inner exception details to help debug DB permission issues
-                return StatusCode(500, new { 
-                    message = "DATABASE_SYNC_ERROR", 
-                    details = ex.InnerException?.Message ?? ex.Message 
+                return StatusCode(500, new {
+                    message = "DATABASE_SYNC_ERROR",
+                    details = ex.InnerException?.Message ?? ex.Message
                 });
             }
         }
 
-        // --- 2. SYSTEM SETTINGS (UPDATE) ---
+        // ─── 2. SYSTEM SETTINGS (UPDATE) ──────────────────────────────────────
         [HttpPut("syssetting")]
         public async Task<IActionResult> UpdateSettings([FromBody] SystemSettings model)
         {
-            try 
+            try
             {
                 var settings = await _context.SystemSettings.FirstOrDefaultAsync();
                 if (settings == null) return NotFound(new { message = "SETTINGS_NOT_FOUND" });
@@ -81,7 +78,7 @@ namespace YourProject.Controllers
             }
         }
 
-        // --- 3. FETCH ALL ACCOUNTS ---
+        // ─── 3. FETCH ALL ACCOUNTS ────────────────────────────────────────────
         [HttpGet("accounts")]
         public async Task<IActionResult> GetAllAccounts()
         {
@@ -99,7 +96,7 @@ namespace YourProject.Controllers
             return Ok(users);
         }
 
-        // --- 4. FETCH LOGIN AUDIT LOGS ---
+        // ─── 4. FETCH LOGIN AUDIT LOGS ────────────────────────────────────────
         [HttpGet("login-logs")]
         public async Task<IActionResult> GetLoginLogs()
         {
@@ -121,13 +118,13 @@ namespace YourProject.Controllers
                     .ToListAsync();
 
                 var result = logs.Select(l => new {
-                    id = l.Id,
-                    user = l.UserDetail?.Name ?? $"UNKNOWN [{l.EmployeeId}]",
-                    role = l.UserDetail?.Role ?? "UNAUTHORIZED_ACTOR",
+                    id        = l.Id,
+                    user      = l.UserDetail?.Name ?? $"UNKNOWN [{l.EmployeeId}]",
+                    role      = l.UserDetail?.Role ?? "UNAUTHORIZED_ACTOR",
                     ipAddress = l.IpAddress == "::1" ? "127.0.0.1" : l.IpAddress,
-                    status = l.Status?.ToUpper() ?? "FAILED",
+                    status    = l.Status?.ToUpper() ?? "FAILED",
                     timestamp = l.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"),
-                    device = "AXIOM_CORE_V2"
+                    device    = "AXIOM_CORE_V2"
                 });
 
                 return Ok(result);
@@ -138,7 +135,50 @@ namespace YourProject.Controllers
             }
         }
 
-        // --- 5. PROVISION ACCOUNT ---
+        // ─── 5. FETCH ACTIVITY AUDIT LOGS ─────────────────────────────────────
+        // GET /api/admin/activity-logs?module=LEAVE&page=1&limit=50
+        [HttpGet("activity-logs")]
+        public async Task<IActionResult> GetActivityLogs(
+            [FromQuery] string? module = null,
+            [FromQuery] int     page   = 1,
+            [FromQuery] int     limit  = 50)
+        {
+            try
+            {
+                var query = _context.AuditLogs.AsQueryable();
+
+                if (!string.IsNullOrEmpty(module))
+                    query = query.Where(l => l.Module == module.ToUpper());
+
+                var total = await query.CountAsync();
+
+                var logs = await query
+                    .OrderByDescending(l => l.Timestamp)
+                    .Skip((page - 1) * limit)
+                    .Take(limit)
+                    .Select(l => new
+                    {
+                        id        = l.Id.ToString(),
+                        user      = l.ActorName,
+                        role      = l.ActorRole,
+                        dept      = l.ActorDepartment,
+                        action    = l.Action,
+                        module    = l.Module,
+                        target    = l.Target,
+                        ipAddress = l.IpAddress,
+                        timestamp = l.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"),
+                    })
+                    .ToListAsync();
+
+                return Ok(new { total, page, limit, logs });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "ACTIVITY_LOG_FETCH_FAILURE", details = ex.Message });
+            }
+        }
+
+        // ─── 6. PROVISION ACCOUNT ─────────────────────────────────────────────
         [HttpPost("provision")]
         public async Task<IActionResult> ProvisionAccount([FromBody] UserRegistrationDto model)
         {
@@ -165,7 +205,7 @@ namespace YourProject.Controllers
             return Ok(new { message = "PROVISIONED" });
         }
 
-        // --- 6. UPDATE ACCOUNT ---
+        // ─── 7. UPDATE ACCOUNT ────────────────────────────────────────────────
         [HttpPut("update-account/{id}")]
         public async Task<IActionResult> UpdateAccount(int id, [FromBody] UpdateAccountDto model)
         {
@@ -181,7 +221,7 @@ namespace YourProject.Controllers
             return Ok(new { message = "UPDATED" });
         }
 
-        // --- 7. REVOKE ACCESS ---
+        // ─── 8. REVOKE ACCESS ─────────────────────────────────────────────────
         [HttpPut("revoke-account/{id}")]
         public async Task<IActionResult> RevokeAccount(int id)
         {
@@ -193,7 +233,7 @@ namespace YourProject.Controllers
             return Ok(new { message = "ACCESS REVOKED" });
         }
 
-        // --- 8. REACTIVATE ACCESS ---
+        // ─── 9. REACTIVATE ACCESS ─────────────────────────────────────────────
         [HttpPut("reactivate-account/{id}")]
         public async Task<IActionResult> ReactivateAccount(int id)
         {
@@ -206,18 +246,22 @@ namespace YourProject.Controllers
         }
     }
 
-    public class UserRegistrationDto {
-        public string Name { get; set; } = string.Empty;
+    // ─── DTOs ─────────────────────────────────────────────────────────────────
+
+    public class UserRegistrationDto
+    {
+        public string Name       { get; set; } = string.Empty;
         public string EmployeeId { get; set; } = string.Empty;
-        public string Role { get; set; } = string.Empty;
+        public string Role       { get; set; } = string.Empty;
         public string Department { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
+        public string Password   { get; set; } = string.Empty;
     }
 
-    public class UpdateAccountDto {
-        public string Name { get; set; } = string.Empty;
+    public class UpdateAccountDto
+    {
+        public string Name       { get; set; } = string.Empty;
         public string EmployeeId { get; set; } = string.Empty;
-        public string Role { get; set; } = string.Empty;
+        public string Role       { get; set; } = string.Empty;
         public string Department { get; set; } = string.Empty;
     }
 }

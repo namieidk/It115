@@ -29,7 +29,6 @@ namespace YourProject.Controllers
             _reports = reports;
         }
 
-        // GET: api/Attendance/all
         [HttpGet("all")]
         public async Task<IActionResult> GetAllAttendance()
         {
@@ -61,7 +60,6 @@ namespace YourProject.Controllers
             }
         }
 
-        // GET: api/Attendance/department/{department}
         [HttpGet("department/{department}")]
         public async Task<IActionResult> GetDepartmentAttendance(string department)
         {
@@ -93,13 +91,13 @@ namespace YourProject.Controllers
             }
         }
 
-        // POST: api/Attendance/clockin
         [HttpPost("clockin")]
         public async Task<IActionResult> ClockIn([FromBody] Attendance model)
         {
             try
             {
                 DateTime phNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _phZone);
+                TimeSpan currentTime = phNow.TimeOfDay;
 
                 var user = await _context.Users
                     .FirstOrDefaultAsync(u => u.EmployeeId == model.EmployeeId);
@@ -109,11 +107,24 @@ namespace YourProject.Controllers
                 if (user == null || schedule == null)
                     return BadRequest(new { message = "User Profile or Schedule not found." });
 
+                // --- FIX: EARLY CLOCK-IN RESTRICTION ---
+                TimeSpan buffer = TimeSpan.FromMinutes(30);
+                TimeSpan earliestAllowed = schedule.ShiftStart.Subtract(buffer);
+
+                // Logic to handle if user is too early
+                // We check if the current time is before the shift and also before the 30-min buffer
+                if (currentTime < schedule.ShiftStart && currentTime < earliestAllowed)
+                {
+                    return BadRequest(new { 
+                        message = $"TOO EARLY. SHIFT STARTS AT {schedule.ShiftStart:hh\\:mm}. CLOCK-IN ALLOWED FROM {earliestAllowed:hh\\:mm}." 
+                    });
+                }
+
                 model.Name        = user.Name;
                 model.Role        = user.Role;
                 model.Department  = user.Department;
                 model.ClockInTime = phNow;
-                model.Status      = (phNow.TimeOfDay > schedule.ShiftStart) ? "LATE" : "PRESENT";
+                model.Status      = (currentTime > schedule.ShiftStart) ? "LATE" : "PRESENT";
 
                 _context.Attendance.Add(model);
                 await _context.SaveChangesAsync();
@@ -128,10 +139,8 @@ namespace YourProject.Controllers
                     health = model.Status == "LATE" ? "WARNING" : "GOOD"
                 };
 
-                await _hub.Clients.Group(model.Department ?? "GENERAL")
-                    .SendAsync("NewClockIn", newRecord);
-                await _hub.Clients.Group("HR_GLOBAL")
-                    .SendAsync("NewClockIn", newRecord);
+                await _hub.Clients.Group(model.Department ?? "GENERAL").SendAsync("NewClockIn", newRecord);
+                await _hub.Clients.Group("HR_GLOBAL").SendAsync("NewClockIn", newRecord);
 
                 if (model.Status == "LATE")
                 {
@@ -153,7 +162,6 @@ namespace YourProject.Controllers
             }
         }
 
-        // POST: api/Attendance/clockout ── auto-creates an Attendance Report
         [HttpPost("clockout")]
         public async Task<IActionResult> ClockOut([FromBody] JsonElement body)
         {
@@ -178,7 +186,6 @@ namespace YourProject.Controllers
 
                 await _context.SaveChangesAsync();
 
-                // ── Auto-generate Attendance Report on clock-out ──────────────
                 var user = await _context.Users
                     .FirstOrDefaultAsync(u => u.EmployeeId == empId);
 
@@ -201,7 +208,6 @@ namespace YourProject.Controllers
             }
         }
 
-        // GET: api/Attendance/my-logs/{employeeId}
         [HttpGet("my-logs/{employeeId}")]
         public async Task<IActionResult> GetMyLogs(string employeeId)
         {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Users, Search, Filter, Download, UserCheck, AlertTriangle, MoreHorizontal, Clock, X } from 'lucide-react';
+import { Users, Search, Filter, Download, UserCheck, AlertTriangle, Clock, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export interface AttendanceRecord {
   id: string;
@@ -24,22 +24,30 @@ export interface FilterState {
 
 interface ManagerAttendanceUIProps {
   attendanceData: AttendanceRecord[];
+  totalItems: number;
   searchTerm: string;
   onSearchChange: (value: string) => void;
   onExport: () => void;
   filters: FilterState;
   onFilterChange: (filters: FilterState) => void;
   onResetFilters: () => void;
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
 }
 
 export const ManagerAttendanceUI = ({
   attendanceData,
+  totalItems,
   searchTerm,
   onSearchChange,
   onExport,
   filters,
   onFilterChange,
   onResetFilters,
+  currentPage,
+  totalPages,
+  onPageChange,
 }: ManagerAttendanceUIProps) => {
 
   const [showFilter, setShowFilter] = useState(false);
@@ -55,11 +63,7 @@ export const ManagerAttendanceUI = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const isFilterActive =
-    filters.status !== 'ALL' ||
-    filters.date !== 'TODAY' ||
-    filters.shift !== 'ALL';
-
+  const isFilterActive = filters.status !== 'ALL' || filters.date !== 'TODAY' || filters.shift !== 'ALL';
   const lateCount = attendanceData.filter(a => a.status === 'LATE').length;
   const presentCount = attendanceData.filter(a => a.status === 'PRESENT').length;
 
@@ -86,7 +90,6 @@ export const ManagerAttendanceUI = ({
         </div>
 
         <div className="flex gap-4 items-center">
-          {/* SEARCH */}
           <div className="relative group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
             <input
@@ -97,14 +100,11 @@ export const ManagerAttendanceUI = ({
             />
           </div>
 
-          {/* FILTER BUTTON + DROPDOWN */}
           <div className="relative" ref={filterRef}>
             <button
               onClick={() => setShowFilter(!showFilter)}
               className={`flex items-center gap-2 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-                isFilterActive
-                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-xl shadow-indigo-600/20'
-                  : 'bg-white/5 text-slate-400 border-white/10 hover:border-indigo-500/50 hover:text-white'
+                isFilterActive ? 'bg-indigo-600 text-white border-indigo-500 shadow-xl shadow-indigo-600/20' : 'bg-white/5 text-slate-400 border-white/10 hover:border-indigo-500/50 hover:text-white'
               }`}
             >
               <Filter className="w-4 h-4" />
@@ -117,119 +117,39 @@ export const ManagerAttendanceUI = ({
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-black text-white uppercase tracking-widest">Filter Options</span>
                   <div className="flex items-center gap-3">
-                    {isFilterActive && (
-                      <button
-                        onClick={() => { onResetFilters(); }}
-                        className="text-[9px] font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300 transition-colors"
-                      >
-                        Reset
-                      </button>
-                    )}
-                    <button onClick={() => setShowFilter(false)}>
-                      <X className="w-4 h-4 text-slate-500 hover:text-white transition-colors" />
-                    </button>
+                    {isFilterActive && <button onClick={onResetFilters} className="text-[9px] font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300 transition-colors">Reset</button>}
+                    <button onClick={() => setShowFilter(false)}><X className="w-4 h-4 text-slate-500 hover:text-white transition-colors" /></button>
                   </div>
                 </div>
 
-                {/* STATUS */}
-                <div className="space-y-3">
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Status</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(['ALL', 'PRESENT', 'LATE', 'ABSENT'] as const).map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => onFilterChange({ ...filters, status: s })}
-                        className={`py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
-                          filters.status === s
-                            ? 'bg-indigo-600 text-white border-indigo-500'
-                            : 'bg-white/5 text-slate-400 border-white/5 hover:border-indigo-500/30 hover:text-white'
-                        }`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+                {/* Filter Grid - Status/Shift */}
+                <div className="space-y-4">
+                   <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Select Status</p>
+                   <div className="grid grid-cols-2 gap-2">
+                     {(['ALL', 'PRESENT', 'LATE', 'ABSENT'] as const).map((s) => (
+                       <button key={s} onClick={() => onFilterChange({ ...filters, status: s })} className={`py-3 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${filters.status === s ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white/5 text-slate-400 border-white/5 hover:border-indigo-500/30'}`}>{s}</button>
+                     ))}
+                   </div>
                 </div>
 
-                {/* DATE */}
-                <div className="space-y-3">
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Date Range</p>
-                  <div className="space-y-2">
-                    {([
-                      { val: 'TODAY', label: 'Today' },
-                      { val: 'THIS_WEEK', label: 'This Week' },
-                      { val: 'THIS_MONTH', label: 'This Month' },
-                    ] as const).map((d) => (
-                      <button
-                        key={d.val}
-                        onClick={() => onFilterChange({ ...filters, date: d.val })}
-                        className={`w-full py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
-                          filters.date === d.val
-                            ? 'bg-indigo-600 text-white border-indigo-500'
-                            : 'bg-white/5 text-slate-400 border-white/5 hover:border-indigo-500/30 hover:text-white'
-                        }`}
-                      >
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* SHIFT */}
-                <div className="space-y-3">
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Shift</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      { val: 'ALL', label: 'All Shifts' },
-                      { val: 'MORNING', label: '🌅 Morning' },
-                      { val: 'AFTERNOON', label: '☀️ Afternoon' },
-                      { val: 'NIGHT', label: '🌙 Night' },
-                    ] as const).map((sh) => (
-                      <button
-                        key={sh.val}
-                        onClick={() => onFilterChange({ ...filters, shift: sh.val })}
-                        className={`py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
-                          filters.shift === sh.val
-                            ? 'bg-indigo-600 text-white border-indigo-500'
-                            : 'bg-white/5 text-slate-400 border-white/5 hover:border-indigo-500/30 hover:text-white'
-                        }`}
-                      >
-                        {sh.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setShowFilter(false)}
-                  className="w-full py-4 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
-                >
-                  Apply Filters
-                </button>
+                <button onClick={() => setShowFilter(false)} className="w-full py-4 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20 active:scale-95">Apply Filters</button>
               </div>
             )}
           </div>
 
-          <button
-            onClick={onExport}
-            className="flex items-center gap-2 px-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
-          >
-            <Download className="w-4 h-4" /> Export Log
-          </button>
+    
         </div>
       </div>
 
-      {/* STATS CARDS */}
+      {/* STATS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
-          { label: 'Total In Shift', val: attendanceData.length, icon: UserCheck, color: 'text-indigo-400' },
-          { label: 'On-Time', val: presentCount, icon: Users, color: 'text-emerald-500' },
+          { label: 'Displaying Agents', val: attendanceData.length, icon: UserCheck, color: 'text-indigo-400' },
+          { label: 'Matched Records', val: totalItems, icon: Users, color: 'text-emerald-500' },
           { label: 'Late Flags', val: lateCount, icon: AlertTriangle, color: 'text-orange-400' },
         ].map((stat, i) => (
           <div key={i} className="bg-slate-900/40 border border-white/5 p-6 rounded-[2.5rem] flex items-center gap-5 backdrop-blur-3xl">
-            <div className={`p-4 rounded-2xl bg-white/5 ${stat.color}`}>
-              <stat.icon className="w-6 h-6" />
-            </div>
+            <div className={`p-4 rounded-2xl bg-white/5 ${stat.color}`}><stat.icon className="w-6 h-6" /></div>
             <div>
               <p className="text-[9px] font-black text-slate-500 tracking-widest uppercase">{stat.label}</p>
               <p className={`text-2xl font-black ${stat.color} tracking-tighter`}>{stat.val}</p>
@@ -238,29 +158,11 @@ export const ManagerAttendanceUI = ({
         ))}
       </div>
 
-      {/* TABLE */}
+      {/* TABLE WITH PAGINATION FOOTER */}
       <div className="bg-slate-900/20 border border-white/5 rounded-[3.5rem] overflow-hidden shadow-2xl backdrop-blur-md">
-        <div className="px-10 py-8 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-          <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-white">
-             {today}
-          </h3>
-          <div className="flex items-center gap-3">
-            {isFilterActive && (
-              <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
-                Filters Active
-              </span>
-            )}
-            {searchTerm && (
-              <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
-                Search: {searchTerm}
-              </span>
-            )}
-          </div>
-        </div>
-
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="text-[10px] uppercase tracking-[0.25em] text-slate-500 font-black border-b border-white/5">
+            <tr className="text-[10px] uppercase tracking-[0.25em] text-slate-500 font-black border-b border-white/5 bg-white/[0.02]">
               <th className="px-10 py-6">Agent ID</th>
               <th className="px-10 py-6">Name</th>
               <th className="px-10 py-6">Clock In</th>
@@ -269,30 +171,56 @@ export const ManagerAttendanceUI = ({
           </thead>
           <tbody className="divide-y divide-white/5">
             {attendanceData.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-10 py-20 text-center text-[10px] font-black text-slate-600 tracking-widest uppercase">
-                  {searchTerm || isFilterActive ? 'No records match your filters' : 'No attendance records found for today'}
-                </td>
-              </tr>
+              <tr><td colSpan={4} className="px-10 py-20 text-center text-[10px] font-black text-slate-600 tracking-widest uppercase italic">No records found on this page</td></tr>
             ) : (
               attendanceData.map((agent, index) => (
-                <tr key={`${agent.id}-${agent.login}-${index}`} className="hover:bg-white/5 transition-all group">
+                <tr key={`${agent.id}-${index}`} className="hover:bg-white/5 transition-all group">
                   <td className="px-10 py-7 text-[10px] font-black text-slate-500 tracking-widest font-mono">{agent.id}</td>
                   <td className="px-10 py-7 font-black text-white text-xs uppercase group-hover:text-indigo-400 transition-colors">{agent.name}</td>
                   <td className="px-10 py-7 font-mono text-white text-sm">{agent.login}</td>
                   <td className="px-10 py-7">
-                    <span className={`text-[10px] font-black tracking-widest uppercase ${
-                      agent.status === 'LATE' ? 'text-orange-400' : 'text-emerald-500'
-                    }`}>
+                    <span className={`text-[10px] font-black tracking-widest uppercase ${agent.status === 'LATE' ? 'text-orange-400' : 'text-emerald-500'}`}>
                       ● {agent.status}
                     </span>
                   </td>
-                  
                 </tr>
               ))
             )}
           </tbody>
         </table>
+
+        {/* PAGINATION CONTROLS */}
+        <div className="px-10 py-6 bg-white/[0.02] border-t border-white/5 flex items-center justify-between">
+          <div className="text-[9px] font-black text-slate-500 tracking-widest uppercase">
+            Showing <span className="text-indigo-400">{attendanceData.length}</span> of {totalItems} Agents
+          </div>
+          
+          <div className="flex items-center gap-6">
+            <div className="flex gap-2">
+              <button 
+                onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="p-3 rounded-xl border border-white/5 bg-white/5 text-slate-400 hover:text-white hover:border-indigo-500/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              
+              <div className="flex items-center px-4 bg-white/5 border border-white/5 rounded-xl">
+                <span className="text-[10px] font-black text-indigo-400 tracking-widest">
+                  PAGE {currentPage} <span className="text-slate-600 mx-2">/</span> {totalPages || 1}
+                </span>
+              </div>
+
+              <button 
+                onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="p-3 rounded-xl border border-white/5 bg-white/5 text-slate-400 hover:text-white hover:border-indigo-500/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

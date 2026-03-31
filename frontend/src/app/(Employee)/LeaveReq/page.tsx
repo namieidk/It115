@@ -21,113 +21,144 @@ interface LeaveHistoryAPIResponse {
   status: string;
 }
 
-export default function LeaveReqPage() {
-  const [credits, setCredits] = useState<number>(15);
-  const [history, setHistory] = useState<LeaveHistoryItem[]>([]);
-  const [requestedDays, setRequestedDays] = useState<number>(0);
-  const [dates, setDates] = useState({ start: '', end: '' });
+const API = 'http://localhost:5076/api/leave';
 
+export default function LeaveReqPage() {
+  const [credits, setCredits]             = useState<number>(0);
+  const [history, setHistory]             = useState<LeaveHistoryItem[]>([]);
+  const [requestedDays, setRequestedDays] = useState<number>(0);
+  const [dates, setDates]                 = useState({ start: '', end: '' });
+
+  // ✅ Returns employeeId as int — matches Employee.EmployeeId (int) in the DB
   const getEmployeeId = useCallback((): number | null => {
     try {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      return user.employeeId ? parseInt(user.employeeId) : null;
-    } catch { return null; }
+      const parsed = parseInt(user.employeeId);
+      return isNaN(parsed) ? null : parsed;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const fetchCredits = useCallback(async (employeeId: number) => {
+    try {
+      const res = await fetch(`${API}/credits/${employeeId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCredits(data.balance ?? 0);
+      } else {
+        console.error(`Credits fetch failed: ${res.status}`);
+      }
+    } catch (err) {
+      console.error('Credits fetch error:', err);
+    }
   }, []);
 
   const fetchHistory = useCallback(async (employeeId: number) => {
     try {
-      const res = await fetch(`http://localhost:5076/api/Leave/history/${employeeId}`);
+      const res = await fetch(`${API}/history/${employeeId}`);
       if (res.ok) {
         const data: LeaveHistoryAPIResponse[] = await res.json();
-        const mappedData: LeaveHistoryItem[] = data.map((item) => {
-          const status = item.status.toUpperCase();
+        const mapped: LeaveHistoryItem[] = data.map((item) => {
+          const status = item.status?.toUpperCase() ?? 'PENDING';
           return {
-            type: item.type,
-            date: new Date(item.date).toLocaleDateString('en-PH', { 
-              day: '2-digit', month: 'short', year: 'numeric' 
-            }),
-            status: status,
-            color: status === 'APPROVED' ? 'emerald' : status === 'REJECTED' ? 'red' : 'indigo',
-            icon: status === 'PENDING' ? Clock : Calendar,
+            type:   item.type,
+            date:   item.date,
+            status,
+            color:  status === 'APPROVED' ? 'emerald'
+                  : status === 'REJECTED' ? 'red'
+                  : 'indigo',
+            icon:   status === 'PENDING' ? Clock : Calendar,
           };
         });
-        setHistory(mappedData);
+        setHistory(mapped);
+      } else {
+        console.error(`History fetch failed: ${res.status}`);
       }
-    } catch (err) { console.error("Fetch Error:", err); }
+    } catch (err) {
+      console.error('History fetch error:', err);
+    }
   }, []);
 
-  // Combined effect to handle initial data load
+  // ── Initial data load ──────────────────────────────────────────────────
   useEffect(() => {
     const id = getEmployeeId();
     if (!id) return;
 
-    const loadInitialData = async () => {
-      try {
-        // Fetch Credits
-        const creditsRes = await fetch(`http://localhost:5076/api/Leave/credits/${id}`);
-        if (creditsRes.ok) {
-          const data = await creditsRes.json();
-          setCredits(data.balance ?? data.credits ?? 15);
-        }
-        // Fetch History
-        await fetchHistory(id);
-      } catch (err) {
-        console.error("Initialization Error:", err);
-      }
+    const load = async () => {
+      await fetchCredits(id);
+      await fetchHistory(id);
     };
 
-    loadInitialData();
-  }, [getEmployeeId, fetchHistory]);
+    load();
+  }, [getEmployeeId, fetchCredits, fetchHistory]);
 
+  // ── Date change handler ────────────────────────────────────────────────
   const handleDateChange = (type: 'start' | 'end', value: string) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (new Date(value) < today) {
-      toast.error("INVALID DATE: PAST DATES RESTRICTED");
-      return; 
+      toast.error('INVALID DATE: PAST DATES RESTRICTED');
+      return;
     }
     const updated = { ...dates, [type]: value };
     setDates(updated);
     if (updated.start && updated.end) {
-      const diff = Math.ceil((new Date(updated.end).getTime() - new Date(updated.start).getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const diff =
+        Math.ceil(
+          (new Date(updated.end).getTime() - new Date(updated.start).getTime()) /
+          (1000 * 60 * 60 * 24)
+        ) + 1;
       setRequestedDays(diff > 0 ? diff : 0);
     }
   };
 
+  // ── Submit handler ─────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const employeeId = getEmployeeId();
-    const formData = new FormData(e.currentTarget);
-    const reason = formData.get('reason') as string;
+    const formData   = new FormData(e.currentTarget);
 
-    if (!employeeId || requestedDays <= 0) {
-      toast.error("PLEASE SELECT VALID DATES");
+    if (!employeeId) {
+      toast.error('SESSION EXPIRED — PLEASE LOG IN AGAIN');
+      return;
+    }
+    if (requestedDays <= 0) {
+      toast.error('PLEASE SELECT VALID DATES');
       return;
     }
 
-    const promise = fetch('http://localhost:5076/api/Leave/apply', {
-      method: 'POST',
+    const body = JSON.stringify({
+      employeeId,                           // number — matches int in C# model
+      leaveType: formData.get('leaveType'),
+      startDate: dates.start,
+      endDate:   dates.end,
+      reason:    formData.get('reason'),
+    });
+
+    const promise = fetch(`${API}/apply`, {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        employeeId,
-        leaveType: formData.get('leaveType'),
-        startDate: dates.start,
-        endDate: dates.end,
-        reason,
-      }),
+      body,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message ?? `Server error ${res.status}`);
+      }
+      return res;
     });
 
     toast.promise(promise, {
       loading: 'TRANSMITTING REQUEST...',
-      success: (res) => {
-        if (!res.ok) throw new Error();
+      success: () => {
         setDates({ start: '', end: '' });
         setRequestedDays(0);
         (e.target as HTMLFormElement).reset();
+        fetchCredits(employeeId);
         fetchHistory(employeeId);
         return 'REQUEST TRANSMITTED SUCCESSFULLY';
       },
-      error: 'FAILED TO TRANSMIT REQUEST',
+      error: (err) => err?.message ?? 'FAILED TO TRANSMIT REQUEST',
     });
   };
 
