@@ -51,6 +51,9 @@ export const ManagerProfileUI = ({
   
   const formFields: (keyof EditForm)[] = ['email', 'phone', 'workstation'];
 
+  // FIX: guard against undefined/null directReports from the API
+  const directReports: DirectReport[] = Array.isArray(data.directReports) ? data.directReports : [];
+
   return (
     <>
       <section className="flex-1 flex flex-col overflow-y-auto bg-[#020617] relative">
@@ -147,11 +150,11 @@ export const ManagerProfileUI = ({
                 <span>Direct Reports // {data.department}</span>
                 <div className="flex items-center gap-2 text-slate-500">
                   <Briefcase className="w-4 h-4" />
-                  <span>Total: {data.teamSize}</span>
+                  <span>Total: {data.teamSize ?? 0}</span>
                 </div>
                </div>
                <div className="divide-y divide-white/5">
-                {data.directReports.map((report, i) => (
+                {directReports.length > 0 ? directReports.map((report, i) => (
                   <div key={i} className="px-10 py-6 flex justify-between items-center hover:bg-white/5 transition-all font-black">
                     <div className="flex items-center gap-4 text-white">
                       <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-500 text-[10px] uppercase">
@@ -169,7 +172,11 @@ export const ManagerProfileUI = ({
                       <ChevronRight className="w-4 h-4 text-slate-800" />
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="px-10 py-12 text-center text-[9px] font-black text-slate-600 tracking-widest uppercase">
+                    No direct reports assigned
+                  </div>
+                )}
                </div>
             </div>
           </div>

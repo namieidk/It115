@@ -1,3 +1,4 @@
+// Evaluation.tsx
 'use client';
 
 import React from 'react';
@@ -20,26 +21,37 @@ interface EvaluationViewProps {
   targetAgent: Agent | null;
   setTargetAgent: (agent: Agent | null) => void;
   loading: boolean;
-  onSubmit: (avg: number, comm: string) => void; 
+  onSubmit: (avg: number, comm: string) => void;
   isSubmitting: boolean;
 }
 
+// Maps the card id → EvaluationForm type key
+const TYPE_TO_FORM: Record<string, 'peer' | 'manager' | 'hr'> = {
+  peer:       'peer',
+  managerial: 'manager',
+  hr:         'hr',
+};
+
 export function EvaluationView({
-  selectedType, setSelectedType, agents, targetAgent, 
+  selectedType, setSelectedType, agents, targetAgent,
   setTargetAgent, loading, onSubmit, isSubmitting
 }: EvaluationViewProps) {
 
   const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('user') || '{}') : {};
-  const userRole = user.role?.toUpperCase() || 'PERSONNEL';
-  const isManager = userRole === 'MANAGER';
+  const userRole = (user.role || '').toLowerCase();
+  const isManager = userRole === 'manager';
+  const isHR      = userRole === 'hr';
+
+  // Resolve which form criteria set to use
+  const formType = selectedType ? (TYPE_TO_FORM[selectedType] ?? 'peer') : 'peer';
 
   if (selectedType && targetAgent) {
     return (
       <main className="h-screen w-full flex bg-[#020617] text-slate-200 overflow-hidden font-sans">
         <Sidebar />
         <section className="flex-1 overflow-y-auto scrollbar-hide">
-          <EvaluationForm 
-            type={selectedType as 'peer' | 'manager' | 'hr'}
+          <EvaluationForm
+            type={formType}
             targetName={targetAgent.name}
             targetId={targetAgent.id}
             isSubmitting={isSubmitting}
@@ -63,28 +75,30 @@ export function EvaluationView({
               </button>
               <header className="mb-12">
                 <h2 className="text-3xl font-black text-white italic">SELECT <span className="text-indigo-500">SUBJECT</span></h2>
-                {!loading && <p className="text-[10px] font-bold text-slate-500 tracking-[0.2em] mt-2 italic">DEPT: {user.department} • CATEGORY: {selectedType}</p>}
+                {!loading && (
+                  <p className="text-[10px] font-bold text-slate-500 tracking-[0.2em] mt-2 italic">
+                    DEPT: {user.department} • CATEGORY: {selectedType.toUpperCase()}
+                  </p>
+                )}
               </header>
 
               {loading ? (
                 <div className="py-20 flex flex-col items-center justify-center gap-4">
-                   <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                   <p className="text-[10px] font-black text-indigo-500 tracking-[0.5em]">SCANNING DATABASE...</p>
+                  <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-[10px] font-black text-indigo-500 tracking-[0.5em]">SCANNING DATABASE...</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {agents.map((agent) => {
                     const isLocked = agent.alreadyEvaluated;
-
                     return (
-                      <button 
-                        key={agent.id} 
+                      <button
+                        key={agent.id}
                         disabled={isLocked}
-                        onClick={() => setTargetAgent(agent)} 
+                        onClick={() => setTargetAgent(agent)}
                         className={`relative overflow-hidden bg-slate-900/40 border p-6 rounded-[2rem] text-left transition-all flex items-center gap-5 group
                           ${isLocked ? 'border-red-500/20 opacity-60 cursor-not-allowed' : 'border-white/5 hover:border-indigo-500/50'}`}
                       >
-                        {/* LOCK OVERLAY */}
                         {isLocked && (
                           <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px] flex items-center justify-center z-10">
                             <div className="bg-red-500/20 border border-red-500/40 px-3 py-1 rounded-full flex items-center gap-2">
@@ -93,7 +107,6 @@ export function EvaluationView({
                             </div>
                           </div>
                         )}
-
                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all
                           ${isLocked ? 'bg-slate-800 text-slate-500' : 'bg-white/5 text-indigo-500 group-hover:bg-indigo-500 group-hover:text-slate-950'}`}>
                           <User size={24}/>
@@ -103,7 +116,7 @@ export function EvaluationView({
                           <p className="text-[9px] font-bold text-slate-500 tracking-widest">{isLocked ? 'AUDIT COMPLETE' : `${agent.role} • ${agent.id}`}</p>
                         </div>
                       </button>
-                    )
+                    );
                   })}
                 </div>
               )}
@@ -115,9 +128,37 @@ export function EvaluationView({
                 <h1 className="text-4xl font-black text-white tracking-tighter italic">EVALUATION <span className="text-indigo-500">CENTER</span></h1>
               </header>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl">
-                <TypeCard id="peer" title={isManager ? "SUBORDINATES" : "PEER-TO-PEER"} desc="AUDIT: TEAM DYNAMICS & SYNERGY" icon={Users} color="text-blue-400" onClick={setSelectedType} />
-                {!isManager && <TypeCard id="manager" title="MANAGERIAL" desc="AUDIT: LEADERSHIP & STRATEGIC EXECUTION" icon={UserCheck} color="text-indigo-400" onClick={setSelectedType} />}
-                <TypeCard id="hr" title="HR COMPLIANCE" desc="AUDIT: ETHICS & POLICY ADHERENCE" icon={ShieldAlert} color="text-purple-400" onClick={setSelectedType} />
+                {/* peer card — employees see "PEER-TO-PEER", managers see "SUBORDINATES" */}
+                <TypeCard
+                  id="peer"
+                  title={isManager ? 'SUBORDINATES' : 'PEER-TO-PEER'}
+                  desc="AUDIT: TEAM DYNAMICS & SYNERGY"
+                  icon={Users}
+                  color="text-blue-400"
+                  onClick={setSelectedType}
+                />
+
+                {/* managerial card — only visible to non-managers (employees evaluate up) */}
+                {!isManager && !isHR && (
+                  <TypeCard
+                    id="managerial"
+                    title="MANAGERIAL"
+                    desc="AUDIT: LEADERSHIP & STRATEGIC EXECUTION"
+                    icon={UserCheck}
+                    color="text-indigo-400"
+                    onClick={setSelectedType}
+                  />
+                )}
+
+                {/* hr card — always visible */}
+                <TypeCard
+                  id="hr"
+                  title="HR COMPLIANCE"
+                  desc="AUDIT: ETHICS & POLICY ADHERENCE"
+                  icon={ShieldAlert}
+                  color="text-purple-400"
+                  onClick={setSelectedType}
+                />
               </div>
             </>
           )}
@@ -132,12 +173,12 @@ const TypeCard = ({ id, title, desc, icon: Icon, color, onClick }: any) => (
   <button onClick={() => onClick(id)} className="group bg-slate-900/40 border border-white/5 p-10 rounded-[3.5rem] text-left hover:border-indigo-500 transition-all flex flex-col justify-between h-[320px] shadow-2xl relative overflow-hidden">
     <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity"><Icon size={120} /></div>
     <div>
-        <div className={`${color} mb-6 transition-transform duration-500 group-hover:scale-110`}><Icon size={48} /></div>
-        <h3 className="text-xl font-black text-white mb-2 italic tracking-tighter">{title}</h3>
-        <p className="text-[10px] font-bold text-slate-500 tracking-widest leading-relaxed">{desc}</p>
+      <div className={`${color} mb-6 transition-transform duration-500 group-hover:scale-110`}><Icon size={48} /></div>
+      <h3 className="text-xl font-black text-white mb-2 italic tracking-tighter">{title}</h3>
+      <p className="text-[10px] font-bold text-slate-500 tracking-widest leading-relaxed">{desc}</p>
     </div>
     <div className="flex items-center gap-2 text-[10px] font-black text-indigo-500 tracking-widest group-hover:gap-4 transition-all uppercase">
-        INITIATE AUDIT <ChevronRight size={14} />
+      INITIATE AUDIT <ChevronRight size={14} />
     </div>
   </button>
 );

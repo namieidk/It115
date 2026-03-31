@@ -41,9 +41,9 @@ export default function EvaluationPage() {
     setLoading(true);
     setError(null);
     try {
-      // UPDATED TO THE CORRECT ENDPOINT NAME: agents-with-status
+      // FIX: use "mode" not "evaluationType" — backend param is named "mode"
       const res = await fetch(
-        `${API_BASE}/agents-with-status?department=${encodeURIComponent(dept)}&excludeId=${encodeURIComponent(id)}&viewerRole=${role}&evaluationType=peer`
+        `${API_BASE}/agents-with-status?department=${encodeURIComponent(dept)}&excludeId=${encodeURIComponent(id)}&viewerRole=${role}&mode=peer`
       );
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
@@ -99,7 +99,7 @@ export default function EvaluationPage() {
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
 
       setView('hub');
-      fetchAgents(); // Refresh the list to apply locks
+      fetchAgents();
     } catch (err) {
       setError("Submission failed. Monthly limit reached or server error.");
     } finally {

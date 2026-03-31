@@ -25,30 +25,44 @@ namespace YourProject.Controllers
             [FromQuery] string department,
             [FromQuery] string excludeId,
             [FromQuery] string viewerRole,
-            [FromQuery] string mode)   // ← fixed: was "evaluationType", frontend sends "mode"
+            [FromQuery] string mode)
         {
             try
             {
                 var firstDayOfMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
-                var isHR      = viewerRole?.ToUpper() == "HR";
-                var deptUpper = department?.ToUpper() ?? "";
+                var deptUpper       = department?.Trim().ToUpper() ?? "";
+                var roleUpper       = viewerRole?.Trim().ToUpper() ?? "";
 
                 var query = _context.Users.Where(u => u.Role.ToUpper() != "ADMIN");
 
+                // Always exclude the viewer themselves
                 if (!string.IsNullOrWhiteSpace(excludeId))
                     query = query.Where(u => u.EmployeeId != excludeId.Trim());
 
-                if (isHR)
+                // Always scope to the same department
+                if (!string.IsNullOrEmpty(deptUpper))
+                    query = query.Where(u => u.Department.ToUpper() == deptUpper);
+
+                // Filter by mode — determines WHO is eligible to be evaluated
+                switch (mode?.ToLower())
                 {
-                    if (mode == "evaluate")
+                    case "peer":
+                        // Viewer evaluates people with the same role
+                        query = query.Where(u => u.Role.ToUpper() == roleUpper);
+                        break;
+
+                    case "managerial":
+                        // Employees evaluate upward — only managers are targets
                         query = query.Where(u => u.Role.ToUpper() == "MANAGER");
-                    else if (mode == "results" && !string.IsNullOrEmpty(deptUpper))
-                        query = query.Where(u => u.Department.ToUpper() == deptUpper);
-                }
-                else
-                {
-                    if (!string.IsNullOrEmpty(deptUpper))
-                        query = query.Where(u => u.Department.ToUpper() == deptUpper);
+                        break;
+
+                    case "hr":
+                        // HR compliance — only HR-role users in the same department
+                        query = query.Where(u => u.Role.ToUpper() == "HR");
+                        break;
+
+                    default:
+                        return Ok(new List<object>());
                 }
 
                 var agents = await query
@@ -58,7 +72,7 @@ namespace YourProject.Controllers
                         role       = u.Role.ToUpper(),
                         department = u.Department.ToUpper(),
                         alreadyEvaluated = _context.Evaluations.Any(e =>
-                            e.EvaluatorId.ToString() == excludeId &&
+                            e.EvaluatorId.ToString()      == excludeId &&
                             e.TargetEmployeeId.ToString() == u.EmployeeId &&
                             e.DateSubmitted >= firstDayOfMonth),
                         peerScoreValue = _context.Evaluations
@@ -111,7 +125,7 @@ namespace YourProject.Controllers
             }
         }
 
-        // 3. SUBMIT EVALUATION ── auto-creates a Report record
+        // 3. SUBMIT EVALUATION
         [HttpPost("submit")]
         public async Task<IActionResult> SubmitEvaluation([FromBody] EvaluationSubmitModel model)
         {
@@ -120,8 +134,8 @@ namespace YourProject.Controllers
                 var firstDayOfMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
 
                 bool exists = await _context.Evaluations.AnyAsync(e =>
-                    e.EvaluatorId.ToString()       == model.EvaluatorId &&
-                    e.TargetEmployeeId.ToString()  == model.TargetEmployeeId &&
+                    e.EvaluatorId.ToString()      == model.EvaluatorId &&
+                    e.TargetEmployeeId.ToString() == model.TargetEmployeeId &&
                     e.DateSubmitted >= firstDayOfMonth);
 
                 if (exists)
@@ -139,7 +153,7 @@ namespace YourProject.Controllers
                 _context.Evaluations.Add(evaluation);
                 await _context.SaveChangesAsync();
 
-                // ── Auto-generate Report for the target employee ──────────────
+                // Auto-generate Report for the target employee
                 var targetUser = await _context.Users
                     .FirstOrDefaultAsync(u => u.EmployeeId == model.TargetEmployeeId);
 

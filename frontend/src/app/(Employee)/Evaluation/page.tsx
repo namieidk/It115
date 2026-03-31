@@ -1,8 +1,9 @@
+// page.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { EvaluationView, Agent } from '../../../components/(Employee)/Evaluation/Evaluation';
-import { ShieldCheck, Lock } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
 interface LocalUser {
   employeeId: string;
@@ -11,9 +12,8 @@ interface LocalUser {
   department: string;
 }
 
-// Extended Agent interface to include status
 export interface EnhancedAgent extends Agent {
-  alreadyEvaluated?: boolean; 
+  alreadyEvaluated?: boolean;
   lastEvaluationDate?: string;
 }
 
@@ -30,18 +30,17 @@ export default function EvaluationPage() {
 
   useEffect(() => {
     if (!selectedType || !hasMounted) return;
-    
+
     const fetchAgents = async () => {
       setLoading(true);
       const user: LocalUser = JSON.parse(localStorage.getItem('user') || '{}');
       try {
+        // mode is exactly what card was clicked: "peer" | "managerial" | "hr"
         const params = new URLSearchParams({
           department: user.department || '',
-          excludeId: user.employeeId || '',
-          viewerRole: user.role || '',
-          evaluationType: selectedType,
-          month: new Date().getMonth().toString(), // Pass current month to API
-          year: new Date().getFullYear().toString()
+          excludeId:  user.employeeId || '',
+          viewerRole: user.role       || '',
+          mode:       selectedType,
         });
 
         const res = await fetch(`http://localhost:5076/api/Evaluation/agents-with-status?${params}`);
@@ -49,10 +48,10 @@ export default function EvaluationPage() {
           const data = await res.json();
           setAgents(data);
         }
-      } catch (e) { 
-        console.error("Fetch Error:", e); 
-      } finally { 
-        setLoading(false); 
+      } catch (e) {
+        console.error("Fetch Error:", e);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -70,11 +69,11 @@ export default function EvaluationPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetEmployeeId: targetAgent.id,
-          evaluatorId: user.employeeId,
-          score: avgScore,
-          comments: finalComment,
-          evaluationType: selectedType
-        })
+          evaluatorId:      user.employeeId,
+          score:            avgScore,
+          comments:         finalComment,
+          mode:             selectedType,
+        }),
       });
 
       if (res.ok) {
@@ -83,14 +82,13 @@ export default function EvaluationPage() {
           setShowToast(false);
           setSelectedType(null);
           setTargetAgent(null);
-          // Refresh list to show updated lock status
-          window.location.reload(); 
+          window.location.reload();
         }, 3000);
       }
-    } catch (e) { 
-      alert("Submission failed."); 
-    } finally { 
-      setIsSubmitting(false); 
+    } catch (e) {
+      alert("Submission failed.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -110,7 +108,7 @@ export default function EvaluationPage() {
         </div>
       )}
 
-      <EvaluationView 
+      <EvaluationView
         selectedType={selectedType}
         setSelectedType={setSelectedType}
         agents={agents}
