@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using YourProject.Data; // Ensure this matches your namespace
+using YourProject.Data; 
 using YourProject.Models;
 
 namespace YourProject.Controllers
@@ -16,24 +16,89 @@ namespace YourProject.Controllers
             _context = context;
         }
 
+        // ─── 1. HR EXECUTIVE DASHBOARD STATS ──────────────────────────────────
+        // GET: api/Dashboard/hr-stats
+        [HttpGet("hr-stats")]
+        public async Task<IActionResult> GetHRDashboardStats()
+        {
+            try
+            {
+                // 1. Calculate Active Headcount
+                var activeHeadcount = await _context.Users
+                    .CountAsync(u => u.Status == "ACTIVE");
+
+                // 2. Count New Applicants (Pending Review)
+                var newApplicantsCount = await _context.Applicants
+                    .CountAsync(a => a.Status == "PENDING");
+
+                // 3. Open Requisitions
+                // (Counting unique Job Titles currently being recruited for)
+                var openRequisitions = await _context.Applicants
+                    .Where(a => a.Status == "PENDING")
+                    .Select(a => a.JobTitle)
+                    .Distinct()
+                    .CountAsync();
+
+                // 4. Attrition Rate Calculation
+                // (Inactive Users / Total Users)
+                var totalUsers = await _context.Users.CountAsync();
+                double attritionPercent = 0;
+                if (totalUsers > 0)
+                {
+                    var inactiveCount = await _context.Users.CountAsync(u => u.Status == "INACTIVE");
+                    attritionPercent = ((double)inactiveCount / totalUsers) * 100;
+                }
+
+                // 5. Fetch Recent Applicants for the Pipeline List
+                var recentApplicants = await _context.Applicants
+                    .Where(a => a.Status == "PENDING")
+                    .OrderByDescending(a => a.Id) // Assuming higher ID is newer
+                    .Take(4)
+                    .Select(a => new {
+                        name = (a.FirstName + " " + a.LastName).ToUpper(),
+                        role = a.JobTitle.ToUpper(),
+                        date = "RECENT", 
+                        source = "PORTAL"
+                    })
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    metrics = new {
+                        headcount = activeHeadcount.ToString("N0"),
+                        requisitions = openRequisitions.ToString(),
+                        applicants = newApplicantsCount.ToString(),
+                        attrition = $"{attritionPercent:F1}%"
+                    },
+                    recentApplicants
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { 
+                    message = "KERNEL_HR_SYNC_ERROR", 
+                    details = ex.Message 
+                });
+            }
+        }
+
+        // ─── 2. INDIVIDUAL EMPLOYEE DASHBOARD STATS ────────────────────────────
+        // GET: api/Dashboard/stats/{employeeId}
         [HttpGet("stats/{employeeId}")]
         public async Task<IActionResult> GetEmployeeStats(string employeeId)
         {
             try
             {
-                // 1. Calculate Attendance Rate
-                // Get the employee's schedule to see how many days they SHOULD work
+                // 1. Attendance Rate Logic
                 var schedule = await _context.Schedules
                     .FirstOrDefaultAsync(s => s.EmployeeId == employeeId && s.IsActive);
                 
-                int expectedDays = 20; // Default fallback
+                int expectedDays = 20; 
                 if (schedule != null && !string.IsNullOrEmpty(schedule.WorkingDays))
                 {
-                    // Basic logic: count commas in "Mon,Tue,Wed..." + 1, multiplied by 4 weeks
                     expectedDays = (schedule.WorkingDays.Split(',').Length) * 4;
                 }
 
-                // Count actual "PRESENT" entries in the last 30 days
                 var actualDays = await _context.Attendance
                     .Where(a => a.EmployeeId == employeeId && a.Status == "PRESENT")
                     .CountAsync();
@@ -42,18 +107,16 @@ namespace YourProject.Controllers
                     ? Math.Min((double)actualDays / expectedDays * 100, 100) 
                     : 0;
 
-                // 2. Get CSAT Score (From Evaluations)
+                // 2. CSAT Score (Average from Evaluations)
                 var avgEvalScore = await _context.Evaluations
                     .Where(e => e.TargetEmployeeId.ToString() == employeeId)
                     .AverageAsync(e => (double?)e.Score) ?? 0.0;
 
-                // 3. Get KPI Reports (Count of Evaluations/Submissions)
+                // 3. KPI Reports Count
                 var reportCount = await _context.Evaluations
                     .CountAsync(e => e.TargetEmployeeId.ToString() == employeeId);
 
-                // 4. Avg Handle Time (Logic based on TotalHoursWorked or dummy for now)
-                // In a real call center, this would come from a 'Tickets' table.
-                // Here we'll return a formatted string.
+                // 4. Average Handle Time (Placeholder Logic)
                 string handleTime = "4m 12s"; 
 
                 return Ok(new
@@ -66,7 +129,10 @@ namespace YourProject.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error retrieving dashboard data", details = ex.Message });
+                return StatusCode(500, new { 
+                    message = "INTERNAL_METRIC_ERROR", 
+                    details = ex.Message 
+                });
             }
         }
     }

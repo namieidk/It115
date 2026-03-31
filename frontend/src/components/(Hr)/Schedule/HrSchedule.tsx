@@ -21,9 +21,10 @@ export interface ScheduleDetails {
 }
 
 export interface EmployeeSchedule {
-  id: string; // This maps to the EmployeeId string in your database (e.g., "123458")
+  id: string;
   name: string;
   dept: string;
+  profileImage?: string; // This will now contain the direct Cloudinary URL
   currentShift: string;
   details?: ScheduleDetails;
 }
@@ -44,11 +45,9 @@ export const HRScheduleUI = ({ employees, onSave, isLoading }: HRScheduleUIProps
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedEmp, setSelectedEmp] = useState<EmployeeSchedule | null>(null);
   
-  // Modal Form State
   const [startTime, setStartTime] = useState<string>('08:00');
   const [days, setDays] = useState<string>('Mon,Tue,Wed,Thu,Fri');
 
-  // Filter logic for the search bar
   const filtered = employees.filter(e => 
     e.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     e.id.includes(searchTerm)
@@ -56,7 +55,6 @@ export const HRScheduleUI = ({ employees, onSave, isLoading }: HRScheduleUIProps
 
   const handleOpenModal = (emp: EmployeeSchedule) => {
     setSelectedEmp(emp);
-    // Pre-fill with existing data if available, otherwise defaults
     setStartTime(emp.details?.start ?? '08:00');
     setDays(emp.details?.days ?? 'Mon,Tue,Wed,Thu,Fri');
   };
@@ -99,15 +97,28 @@ export const HRScheduleUI = ({ employees, onSave, isLoading }: HRScheduleUIProps
         ) : (
           filtered.map((emp) => (
             <div 
-              key={emp.id} // Uses EmployeeId to ensure unique keys
+              key={emp.id}
               onClick={() => handleOpenModal(emp)}
               className="bg-slate-900/40 border border-white/5 p-8 rounded-[2.5rem] hover:border-indigo-500/50 transition-all cursor-pointer group relative overflow-hidden backdrop-blur-md shadow-xl"
             >
               <Settings2 className="absolute top-6 right-6 w-4 h-4 text-slate-600 group-hover:text-indigo-400 transition-colors" />
               
               <div className="flex flex-col items-center text-center mb-6">
-                <div className="w-20 h-20 bg-indigo-500/10 rounded-[2rem] flex items-center justify-center border border-indigo-500/20 group-hover:bg-indigo-600 transition-all mb-4">
-                  <UserCircle2 className="w-10 h-10 group-hover:text-white transition-colors" />
+                <div className="w-20 h-20 bg-indigo-500/10 rounded-[2rem] flex items-center justify-center border border-indigo-500/20 group-hover:border-indigo-500 transition-all mb-4 overflow-hidden relative">
+                  {/* CLOUDINARY IMAGE LOGIC */}
+                  {emp.profileImage ? (
+                    <img 
+                      src={emp.profileImage} // DIRECT LINK FROM CLOUDINARY
+                      alt={emp.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fallback if Cloudinary link is broken
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <UserCircle2 className="w-10 h-10 text-indigo-500 group-hover:text-white transition-colors" />
+                  )}
                 </div>
                 <h3 className="text-sm font-black text-white group-hover:text-indigo-400 transition-colors tracking-tighter">
                   {emp.name}
@@ -119,7 +130,7 @@ export const HRScheduleUI = ({ employees, onSave, isLoading }: HRScheduleUIProps
 
               <div className={`text-center py-2 rounded-xl text-[9px] font-black tracking-widest border transition-all ${
                 emp.currentShift === 'UNASSIGNED' 
-                  ? 'border-rose-500/20 bg-rose-500/10 text-rose-500 animate-pulse' 
+                  ? 'border-rose-500/20 bg-rose-500/10 text-rose-500' 
                   : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
               }`}>
                 {emp.currentShift}
@@ -145,7 +156,7 @@ export const HRScheduleUI = ({ employees, onSave, isLoading }: HRScheduleUIProps
 
       {/* ASSIGNMENT MODAL */}
       {selectedEmp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
           <div className="bg-[#020617] border border-white/10 w-full max-w-lg rounded-[3.5rem] p-12 shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-start mb-10">
               <div>
@@ -165,13 +176,12 @@ export const HRScheduleUI = ({ employees, onSave, isLoading }: HRScheduleUIProps
             </div>
 
             <div className="space-y-8">
-              {/* AUTO-SOLVE PRESETS */}
               <div className="grid grid-cols-2 gap-4">
                 <button 
                   onClick={() => setStartTime('08:00')}
                   className={`flex flex-col items-center justify-center gap-2 p-5 rounded-3xl border transition-all ${
                     startTime === '08:00' 
-                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20' 
+                    ? 'bg-indigo-600 border-indigo-500 text-white' 
                     : 'bg-white/5 border-white/10 text-slate-400 hover:border-indigo-500/50'
                   }`}
                 >
@@ -182,7 +192,7 @@ export const HRScheduleUI = ({ employees, onSave, isLoading }: HRScheduleUIProps
                   onClick={() => setStartTime('22:00')}
                   className={`flex flex-col items-center justify-center gap-2 p-5 rounded-3xl border transition-all ${
                     startTime === '22:00' 
-                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20' 
+                    ? 'bg-indigo-600 border-indigo-500 text-white' 
                     : 'bg-white/5 border-white/10 text-slate-400 hover:border-indigo-500/50'
                   }`}
                 >
@@ -223,9 +233,6 @@ export const HRScheduleUI = ({ employees, onSave, isLoading }: HRScheduleUIProps
                 >
                   <Check className="w-5 h-5" /> COMMIT DEPLOYMENT
                 </button>
-                <p className="text-[8px] text-center text-slate-600 font-black tracking-widest mt-4">
-                  * BACKEND WILL AUTOMATICALLY SOLVE 9-HOUR TOTAL DURATION
-                </p>
               </div>
             </div>
           </div>

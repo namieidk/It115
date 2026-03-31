@@ -1,38 +1,82 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { HRSidebar } from '../../../components/(Hr)/Dashboard/sidebar';
-import { NavbarWrapper } from '../../../components/(Employee)/Dashboard/NavbarWrapper'; // Adjusted import path
+import { NavbarWrapper } from '../../../components/(Employee)/Dashboard/NavbarWrapper';
 import { 
   Users, 
   UserPlus, 
   TrendingUp, 
   AlertCircle, 
   ArrowUpRight,
-  Briefcase
+  Briefcase,
+  Loader2
 } from 'lucide-react';
+import Link from 'next/link';
+
+interface DashboardData {
+  metrics: {
+    headcount: string;
+    requisitions: string;
+    applicants: string;
+    attrition: string;
+  };
+  recentApplicants: Array<{
+    name: string;
+    role: string;
+    date: string;
+    source: string;
+  }>;
+}
 
 export default function HRDashboard() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        const response = await fetch('http://localhost:5076/api/Dashboard/hr-stats');
+        if (response.ok) {
+          const result = await response.json();
+          setData(result);
+        }
+      } catch (error) {
+        console.error("Dashboard Fetch Error:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-[#020617]">
+        <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  const stats = [
+    { label: 'ACTIVE HEADCOUNT', val: data?.metrics.headcount || '0', icon: Users, color: 'text-white' },
+    { label: 'OPEN REQUISITIONS', val: data?.metrics.requisitions || '0', icon: Briefcase, color: 'text-indigo-400' },
+    { label: 'NEW APPLICANTS', val: data?.metrics.applicants || '0', icon: UserPlus, color: 'text-emerald-500' },
+    { label: 'ATTRITION RATE', val: data?.metrics.attrition || '0%', icon: TrendingUp, color: 'text-orange-400' },
+  ];
+
   return (
     <main className="h-screen w-full flex bg-[#020617] text-slate-200 overflow-hidden font-sans uppercase">
-      {/* SIDEBAR NAVIGATION */}
       <HRSidebar />
 
-      <section className="flex-1 flex flex-col overflow-y-auto bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-indigo-900/10 via-[#020617] to-[#020617]">
-        
-        {/* GLOBAL NAVIGATION (Replaces old Header) */}
+      <section className="flex-1 flex flex-col overflow-y-auto bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900/10 via-[#020617] to-[#020617]">
         <NavbarWrapper />
 
         <div className="p-12 max-w-[1600px] w-full mx-auto space-y-10">
           
           {/* HR COMMAND METRICS */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {[
-              { label: 'ACTIVE HEADCOUNT', val: '1,284', icon: Users, color: 'text-white' },
-              { label: 'OPEN REQUISITIONS', val: '24', icon: Briefcase, color: 'text-indigo-400' },
-              { label: 'NEW APPLICANTS', val: '156', icon: UserPlus, color: 'text-emerald-500' },
-              { label: 'ATTRITION RATE', val: '2.4%', icon: TrendingUp, color: 'text-orange-400' },
-            ].map((stat, i) => (
+            {stats.map((stat, i) => (
               <div key={i} className="bg-slate-900/40 border border-white/5 p-8 rounded-[2.5rem] flex flex-col justify-between backdrop-blur-3xl group hover:border-indigo-500/30 transition-all">
                 <div className={`w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-6 ${stat.color}`}>
                     <stat.icon className="w-6 h-6" />
@@ -47,23 +91,20 @@ export default function HRDashboard() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
             
-            {/* RECENT APPLICANTS LIST */}
+            {/* RECENT APPLICANTS LIST (Connected to DB) */}
             <div className="lg:col-span-2 bg-slate-900/20 border border-white/5 rounded-[3.5rem] overflow-hidden shadow-2xl">
               <div className="px-10 py-8 border-b border-white/5 flex justify-between items-center bg-white/5">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-white">Pending Talent Pipeline</h3>
-                <button className="text-[9px] font-black text-indigo-500 hover:text-indigo-400 transition-colors tracking-widest uppercase">View All Applicants</button>
+                <Link href="/hr/applicants" className="text-[9px] font-black text-indigo-500 hover:text-indigo-400 transition-colors tracking-widest uppercase">
+                  View All Applicants
+                </Link>
               </div>
               <div className="divide-y divide-white/5">
-                {[
-                  { name: 'JULIA CHENG', role: 'UX DESIGNER', date: '2 HOURS AGO', source: 'LINKEDIN' },
-                  { name: 'LIAM O\'REILLY', role: 'SR. DEVELOPER', date: '5 HOURS AGO', source: 'REFERRAL' },
-                  { name: 'SAMANTHA VANE', role: 'HR GENERALIST', date: 'YESTERDAY', source: 'INDEED' },
-                  { name: 'DAVID KHO', role: 'DATA ANALYST', date: '2 DAYS AGO', source: 'DIRECT' },
-                ].map((applicant, i) => (
+                {data?.recentApplicants.map((applicant, i) => (
                   <div key={i} className="px-10 py-6 flex justify-between items-center hover:bg-white/5 transition-all group">
                     <div className="flex items-center gap-5">
                         <div className="w-10 h-10 rounded-xl bg-indigo-600/10 border border-indigo-500/10 flex items-center justify-center text-indigo-500 text-[10px] font-black">
-                            {applicant.name[0]}{applicant.name.split(' ')[1][0]}
+                            {applicant.name[0]}{applicant.name.split(' ')[1]?.[0] || 'A'}
                         </div>
                         <div>
                             <p className="text-xs font-black text-white tracking-tight uppercase">{applicant.name}</p>
@@ -81,10 +122,15 @@ export default function HRDashboard() {
                     </div>
                   </div>
                 ))}
+                {data?.recentApplicants.length === 0 && (
+                   <div className="p-20 text-center text-slate-600 text-[10px] font-black tracking-widest">
+                     NO PENDING APPLICANTS FOUND
+                   </div>
+                )}
               </div>
             </div>
 
-            {/* CRITICAL COMPLIANCE ALERTS */}
+            {/* CRITICAL COMPLIANCE ALERTS (Static logic remains for UI) */}
             <div className="space-y-6">
               <h3 className="text-xs font-black text-indigo-500 tracking-[0.4em] px-4">Compliance Radar</h3>
               <div className="space-y-4">
